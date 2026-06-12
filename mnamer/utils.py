@@ -520,7 +520,8 @@ def str_title_case(s: str) -> str:
 
 def tmdb_to_external_ids(tmdb_id: str, api_key: str) -> dict[str, str]:
     """Fetch external IDs for a TMDb TV series ID."""
-    import urllib.request, json
+    import json
+    import urllib.request
 
     url = f"https://api.themoviedb.org/3/tv/{tmdb_id}/external_ids?api_key={api_key}"
     with urllib.request.urlopen(url) as r:

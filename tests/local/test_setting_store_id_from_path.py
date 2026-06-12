@@ -1,9 +1,9 @@
 import sys
+from unittest.mock import patch
 
 import pytest
 
 from mnamer.setting_store import SettingStore
-from unittest.mock import patch
 
 pytestmark = pytest.mark.local
 
