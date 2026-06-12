@@ -24,7 +24,6 @@ from mnamer.utils import (
     str_replace,
     str_sanitize,
     str_scenify,
-    tmdb_to_external_ids,
 )
 
 
@@ -61,15 +60,14 @@ class Target:
         file_paths = crawl_in(settings.targets, settings.recurse)
         file_paths = filter_blacklist(file_paths, settings.ignore)
         file_paths = filter_containers(file_paths, settings.mask)
-        #        targets = [cls(file_path, settings) for file_path in file_paths]
         targets = []
         for file_path in file_paths:
             if settings.id_from_path:
                 target_settings = copy.copy(settings)
                 for field, value in extract_ids_from_path(file_path).items():
-                    if not getattr(target_settings, field, None):  # CLI explicit wins
+                    if not getattr(target_settings, field, None):
                         setattr(target_settings, field, value)
-                # If only tmdb found but episode provider needs tvdb/tvmaze, cross-reference
+                # Cross-reference tmdb -> tvdb/tvmaze for episode providers
                 if (
                     target_settings.id_tmdb
                     and not target_settings.id_tvdb
@@ -77,6 +75,8 @@ class Target:
                     and target_settings.api_key_tmdb
                 ):
                     try:
+                        from mnamer.utils import tmdb_to_external_ids
+
                         external = tmdb_to_external_ids(
                             target_settings.id_tmdb, target_settings.api_key_tmdb
                         )
@@ -84,11 +84,11 @@ class Target:
                             if not getattr(target_settings, field, None):
                                 setattr(target_settings, field, value)
                     except Exception:
-                        pass  # non-fatal, fall back to title search
+                        pass
             else:
                 target_settings = settings
             targets.append(cls(file_path, target_settings))
-        targets = list(dict.fromkeys(targets))  # unique values
+        targets = list(dict.fromkeys(targets))
         targets = list(filter(cls._matches_media, targets))
         return targets
 
