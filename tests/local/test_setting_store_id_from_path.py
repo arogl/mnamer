@@ -1,5 +1,7 @@
 import sys
+
 import pytest
+
 from mnamer.setting_store import SettingStore
 
 pytestmark = pytest.mark.local
