@@ -1,5 +1,6 @@
 import dataclasses
 import json
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, override
@@ -330,6 +331,16 @@ class SettingStore:
             help="--test: mocks the renaming and moving of files",
         ).as_dict(),
     )
+    id_from_path: bool = dataclasses.field(
+        default=False,
+        metadata=SettingSpec(
+            action="store_true",
+            dest="id_from_path",
+            flags=["--id_from_path", "--id-from-path", "--idfrompath"],
+            group=SettingType.PARAMETER,
+            help="--id-from-path: parse provider IDs (tmdb/tvdb/imdb/tvmaze) from target path",
+        ).as_dict(),
+    )
 
     # config-only attributes ---------------------------------------------------
 
@@ -431,6 +442,27 @@ class SettingStore:
             self.bulk_apply(config)
         if arguments:
             self.bulk_apply(arguments)
+
+        # ID-from-path injection
+        if self.id_from_path:
+            _ID_PATTERNS = [
+                ("id_tmdb", re.compile(r"(?i)tmdb-(\d+)")),
+                ("id_tvdb", re.compile(r"(?i)tvdb-(\d+)")),
+                ("id_imdb", re.compile(r"(?i)imdb-(tt\d+|\d+)")),
+                ("id_tvmaze", re.compile(r"(?i)tvmaze-(\d+)")),
+            ]
+            for target in self.targets:
+                corpus = " ".join(Path(target).parts)
+                for field, pattern in _ID_PATTERNS:
+                    if getattr(self, field, None):
+                        continue
+                    m = pattern.search(corpus)
+                    if m:
+                        value = m.group(1)
+                        if field == "id_imdb" and not value.startswith("tt"):
+                            value = f"tt{value}"
+                        setattr(self, field, value)
+                        break
         return None
 
     def api_for(self, media_type: MediaType | None) -> ProviderType | None:
