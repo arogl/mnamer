@@ -3,6 +3,7 @@
 import datetime as dt
 import json
 import re
+import re as _re
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import nullcontext
 from os import walk
@@ -16,11 +17,11 @@ from requests.adapters import HTTPAdapter
 
 from mnamer.const import CACHE_PATH, CURRENT_YEAR, SUBTITLE_CONTAINERS
 
-_PATH_ID_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("id_tmdb", re.compile(r"(?i)tmdb-(\d+)")),
-    ("id_tvdb", re.compile(r"(?i)tvdb-(\d+)")),
-    ("id_imdb", re.compile(r"(?i)imdb-(tt\d+|\d+)")),
-    ("id_tvmaze", re.compile(r"(?i)tvmaze-(\d+)")),
+_PATH_ID_PATTERNS: list[tuple[str, _re.Pattern[str]]] = [
+    ("id_tmdb", _re.compile(r"(?i)tmdb-(\d+)")),
+    ("id_tvdb", _re.compile(r"(?i)tvdb-(\d+)")),
+    ("id_imdb", _re.compile(r"(?i)imdb-(tt\d+|\d+)")),
+    ("id_tvmaze", _re.compile(r"(?i)tvmaze-(\d+)")),
 ]
 
 
@@ -515,6 +516,23 @@ def str_title_case(s: str) -> str:
                 s = s[:pos] + exception.upper() + s[pos + word_length :]
 
     return s
+
+
+def tmdb_to_external_ids(tmdb_id: str, api_key: str) -> dict[str, str]:
+    """Fetch external IDs for a TMDb TV series ID."""
+    import urllib.request, json
+
+    url = f"https://api.themoviedb.org/3/tv/{tmdb_id}/external_ids?api_key={api_key}"
+    with urllib.request.urlopen(url) as r:
+        data = json.loads(r.read())
+    result = {}
+    if data.get("tvdb_id"):
+        result["id_tvdb"] = str(data["tvdb_id"])
+    if data.get("imdb_id"):
+        result["id_imdb"] = data["imdb_id"]
+    if data.get("tvrage_id"):
+        result["id_tvmaze"] = str(data["tvrage_id"])
+    return result
 
 
 def year_parse(s: str) -> int | None:

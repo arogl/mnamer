@@ -24,6 +24,7 @@ from mnamer.utils import (
     str_replace,
     str_sanitize,
     str_scenify,
+    tmdb_to_external_ids,
 )
 
 
@@ -68,6 +69,22 @@ class Target:
                 for field, value in extract_ids_from_path(file_path).items():
                     if not getattr(target_settings, field, None):  # CLI explicit wins
                         setattr(target_settings, field, value)
+                # If only tmdb found but episode provider needs tvdb/tvmaze, cross-reference
+                if (
+                    target_settings.id_tmdb
+                    and not target_settings.id_tvdb
+                    and not target_settings.id_tvmaze
+                    and target_settings.api_key_tmdb
+                ):
+                    try:
+                        external = tmdb_to_external_ids(
+                            target_settings.id_tmdb, target_settings.api_key_tmdb
+                        )
+                        for field, value in external.items():
+                            if not getattr(target_settings, field, None):
+                                setattr(target_settings, field, value)
+                    except Exception:
+                        pass  # non-fatal, fall back to title search
             else:
                 target_settings = settings
             targets.append(cls(file_path, target_settings))

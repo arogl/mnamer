@@ -3,6 +3,7 @@ import sys
 import pytest
 
 from mnamer.setting_store import SettingStore
+from unittest.mock import patch
 
 pytestmark = pytest.mark.local
 
@@ -126,3 +127,30 @@ def test_id_parsed_from_folder_multiple_tags(tmp_path):
     assert targets[0]._settings.id_imdb == "tt1234567"
     assert targets[0]._settings.id_tvdb is None
     assert targets[0]._settings.id_tvmaze is None
+
+
+def test_id_tmdb_cross_references_to_tvdb(tmp_path):
+    """--id-tmdb triggers TMDb external ID lookup when api_key_tmdb configured."""
+    episode = tmp_path / "Show {tmdb-228498}" / "ep1.mkv"
+    episode.parent.mkdir(parents=True)
+    episode.write_bytes(b"\x00")
+
+    fake_external = {"id_tvdb": "433591", "id_imdb": "tt27489517"}
+
+    sys.argv += ["--id-from-path", "--test", str(tmp_path / "Show {tmdb-228498}")]
+    settings = SettingStore()
+    settings.api_key_tmdb = "fake_key"
+
+    with (
+        patch("mnamer.setting_store.tmdb_to_external_ids", return_value=fake_external),
+        patch("mnamer.target.tmdb_to_external_ids", return_value=fake_external),
+    ):
+        settings.load()
+
+        from mnamer.target import Target
+
+        targets = Target.populate_paths(settings)
+
+    assert targets[0]._settings.id_tmdb == "228498"
+    assert targets[0]._settings.id_tvdb == "433591"
+    assert targets[0]._settings.id_imdb == "tt27489517"
