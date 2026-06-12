@@ -16,6 +16,13 @@ from requests.adapters import HTTPAdapter
 
 from mnamer.const import CACHE_PATH, CURRENT_YEAR, SUBTITLE_CONTAINERS
 
+_PATH_ID_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    ("id_tmdb", re.compile(r"(?i)tmdb-(\d+)")),
+    ("id_tvdb", re.compile(r"(?i)tvdb-(\d+)")),
+    ("id_imdb", re.compile(r"(?i)imdb-(tt\d+|\d+)")),
+    ("id_tvmaze", re.compile(r"(?i)tvmaze-(\d+)")),
+]
+
 
 def clean_dict(
     target_dict: Mapping[Any, Any], whitelist: Iterable[Any] | None = None
@@ -63,6 +70,23 @@ def crawl_out(filename: str | Path | PurePath) -> Path | None:
         working_dir = parent_dir
     target = Path.home() / filename
     return target if target.exists() else None
+
+
+def extract_ids_from_path(file_path: Path) -> dict[str, str]:
+    """
+    Scans all parts of a file path for embedded provider IDs.
+    Returns a dict of only the fields that matched, e.g. {"id_tmdb": "122781"}.
+    """
+    corpus = " ".join(file_path.parts)
+    result: dict[str, str] = {}
+    for field, pattern in _PATH_ID_PATTERNS:
+        m = pattern.search(corpus)
+        if m:
+            value = m.group(1)
+            if field == "id_imdb" and not value.startswith("tt"):
+                value = f"tt{value}"
+            result[field] = value
+    return result
 
 
 def filename_replace(filename: str, replacements: dict[str, str]) -> str:

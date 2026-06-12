@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import datetime as dt
 from pathlib import Path
 from shutil import move
@@ -15,6 +16,7 @@ from mnamer.setting_store import SettingStore
 from mnamer.types import MediaType, ProviderType
 from mnamer.utils import (
     crawl_in,
+    extract_ids_from_path,
     filename_replace,
     filter_blacklist,
     filter_containers,
@@ -58,7 +60,17 @@ class Target:
         file_paths = crawl_in(settings.targets, settings.recurse)
         file_paths = filter_blacklist(file_paths, settings.ignore)
         file_paths = filter_containers(file_paths, settings.mask)
-        targets = [cls(file_path, settings) for file_path in file_paths]
+        #        targets = [cls(file_path, settings) for file_path in file_paths]
+        targets = []
+        for file_path in file_paths:
+            if settings.id_from_path:
+                target_settings = copy.copy(settings)
+                for field, value in extract_ids_from_path(file_path).items():
+                    if not getattr(target_settings, field, None):  # CLI explicit wins
+                        setattr(target_settings, field, value)
+            else:
+                target_settings = settings
+            targets.append(cls(file_path, target_settings))
         targets = list(dict.fromkeys(targets))  # unique values
         targets = list(filter(cls._matches_media, targets))
         return targets

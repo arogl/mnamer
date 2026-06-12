@@ -17,24 +17,30 @@ def reset_args():
 
 
 @pytest.mark.parametrize(
-    "path,field,expected",
+    "folder,field,expected",
     [
-        (r"G:\Media\Show (2025) {tmdb-122781}\Season 01", "id_tmdb", "122781"),
-        (r"G:\Media\Show (2025) {tvdb-12345}\Season 01", "id_tvdb", "12345"),
-        (r"G:\Media\Show (2025) {tvmaze-999}\Season 01", "id_tvmaze", "999"),
-        (r"G:\Media\Show (2025) {imdb-tt0123456}\Season 01", "id_imdb", "tt0123456"),
-        (
-            r"G:\Media\Show (2025) {imdb-0123456}\Season 01",
-            "id_imdb",
-            "tt0123456",
-        ),  # tt prefix normalised
+        (r"Show (2025) {tmdb-122781}\Season 01", "id_tmdb", "122781"),
+        (r"Show (2025) {tvdb-12345}\Season 01", "id_tvdb", "12345"),
+        (r"Show (2025) {tvmaze-999}\Season 01", "id_tvmaze", "999"),
+        (r"Show (2025) {imdb-tt0123456}\Season 01", "id_imdb", "tt0123456"),
+        (r"Show (2025) {imdb-0123456}\Season 01", "id_imdb", "tt0123456"),
     ],
 )
-def test_id_parsed_from_folder(path, field, expected):
-    sys.argv += ["--id-from-path", "--test", path]
+def test_id_parsed_from_folder(tmp_path, folder, field, expected):
+    # Create a real file so crawl_in finds it
+    episode = tmp_path / folder / "ep1.mkv"
+    episode.parent.mkdir(parents=True)
+    episode.write_bytes(b"\x00")
+
+    sys.argv += ["--id-from-path", "--test", str(tmp_path / folder)]
     settings = SettingStore()
     settings.load()
-    assert getattr(settings, field) == expected
+
+    from mnamer.target import Target
+
+    targets = Target.populate_paths(settings)
+    assert len(targets) == 1
+    assert getattr(targets[0]._settings, field) == expected
 
 
 def test_id_from_path_explicit_flag_wins():
@@ -83,3 +89,20 @@ def test_id_from_path_flag_accepted():
     settings = SettingStore()
     settings.load()  # would raise MnamerException if flag unknown
     assert settings.id_from_path is True
+
+
+def test_id_from_path_recurse_child_dir(tmp_path):
+    episode = tmp_path / "Show {tvdb-123}" / "Season 01" / "ep1.mkv"
+    episode.parent.mkdir(parents=True)
+    episode.write_bytes(b"\x00")
+
+    sys.argv += ["--id-from-path", "--recurse", "--test", str(tmp_path)]
+    settings = SettingStore()
+    settings.load()
+
+    from mnamer.target import Target
+
+    targets = Target.populate_paths(settings)
+    assert len(targets) == 1
+    assert targets[0]._settings.id_tvdb == "123"
+    assert targets[0]._settings.id_tmdb is None  # no bleed
