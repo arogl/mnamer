@@ -1,4 +1,5 @@
 import datetime as dt
+import sys
 from pathlib import Path
 
 import pytest
@@ -127,6 +128,9 @@ def test_destination__relative_directory_lowered():
     assert target.destination == Path("movies/n/ninja turtles (1990).mkv").resolve()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Unix path test, not valid on Windows"
+)
 def test_destination__absolute_directory_preserves_literal_parts():
     """Literal parts of an absolute configured directory survive --lower."""
     settings = SettingStore(
@@ -139,6 +143,9 @@ def test_destination__absolute_directory_preserves_literal_parts():
     assert target.destination == Path("/Media Library/Movies/ninja turtles (1990).mkv")
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Unix path test, not valid on Windows"
+)
 def test_destination__absolute_directory_transforms_template_parts():
     """Template parts within an absolute configured directory are transformed."""
     settings = SettingStore(
@@ -180,6 +187,9 @@ def test_destination__relative_directory_scene():
     )
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Unix path test, not valid on Windows"
+)
 def test_destination__absolute_directory_scene_preserves_literal_parts():
     """Literal parts of an absolute configured directory survive --scene."""
     settings = SettingStore(
@@ -192,6 +202,9 @@ def test_destination__absolute_directory_scene_preserves_literal_parts():
     assert target.destination == Path("/Media Library/Movies/ninja.turtles.1990.mkv")
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Unix path test, not valid on Windows"
+)
 def test_destination__absolute_directory_scene_transforms_template_parts():
     """Template parts within an absolute configured directory survive --scene."""
     settings = SettingStore(
