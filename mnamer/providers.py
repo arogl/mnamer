@@ -453,7 +453,7 @@ class TvMaze(Provider[MetadataEpisode]):
         episode: int | None,
         language: Language | None = None,
     ) -> Iterator[MetadataEpisode]:
-        series_data = tvmaze_show(id_tvmaze)
+        series_data = tvmaze_show(id_tvmaze, cache=self.cache)
         episode_data = tvmaze_episode_by_number(id_tvmaze, season, episode)
         id_tvdb = self._opt_str(series_data["externals"].get("thetvdb"))
         yield self._transform_meta(
@@ -469,13 +469,16 @@ class TvMaze(Provider[MetadataEpisode]):
     ) -> Iterator[MetadataEpisode]:
         assert id_tvmaze or id_tvdb
         if id_tvmaze:
-            series_data = tvmaze_show(id_tvmaze)
+            series_data = tvmaze_show(id_tvmaze, cache=self.cache)
             query_id_tvmaze = id_tvmaze
             query_id_tvdb = self._opt_str(series_data["externals"].get("thetvdb"))
         else:
-            series_data = tvmaze_show_lookup(id_tvdb=id_tvdb)
-            query_id_tvmaze = str(series_data["id"])
+            lookup_data = tvmaze_show_lookup(id_tvdb=id_tvdb)
+            query_id_tvmaze = str(lookup_data["id"])
             query_id_tvdb = id_tvdb
+            series_data = tvmaze_show(
+                query_id_tvmaze, cache=self.cache
+            )  # re-fetch with AKAs embedded
         episode_data = tvmaze_episodes_by_date(query_id_tvmaze, air_date)
         for episode_entry in episode_data:
             yield self._transform_meta(
@@ -493,12 +496,15 @@ class TvMaze(Provider[MetadataEpisode]):
         assert id_tvmaze or id_tvdb
         if id_tvmaze:
             query_id_tvmaze = id_tvmaze
-            series_data = tvmaze_show(id_tvmaze)
+            series_data = tvmaze_show(id_tvmaze, cache=self.cache)
             query_id_tvdb = self._opt_str(series_data["externals"].get("thetvdb"))
         else:
-            series_data = tvmaze_show_lookup(id_tvdb=id_tvdb)
+            lookup_data = tvmaze_show_lookup(id_tvdb=id_tvdb)
+            query_id_tvmaze = str(lookup_data["id"])
             query_id_tvdb = id_tvdb
-            query_id_tvmaze = str(series_data["id"])
+            series_data = tvmaze_show(
+                query_id_tvmaze, cache=self.cache
+            )  # re-fetch with AKAs embedded
         episode_data = tvmaze_show_episodes_list(query_id_tvmaze)
         for episode_entry in episode_data:
             meta = self._transform_meta(
@@ -518,12 +524,13 @@ class TvMaze(Provider[MetadataEpisode]):
         language: Language | None = None,
     ) -> Iterator[MetadataEpisode]:
         assert season
-        series_data = tvmaze_show_search(series)
+        series_data = tvmaze_show_search(series, cache=self.cache)
         for idx, search_entry in enumerate(series_data):
             if idx >= 3:
                 break
             series_entry = search_entry["show"]
             id_tvmaze = str(series_entry["id"])
+            series_entry = tvmaze_show(id_tvmaze, cache=self.cache)
             try:
                 episode_entry = tvmaze_episode_by_number(id_tvmaze, season, episode)
             except MnamerNotFoundException:
@@ -545,12 +552,13 @@ class TvMaze(Provider[MetadataEpisode]):
         language: Language | None = None,
     ) -> Iterator[MetadataEpisode]:
         assert series
-        series_data = tvmaze_show_search(series)
+        series_data = tvmaze_show_search(series, cache=self.cache)
         for idx, search_entry in enumerate(series_data):
             if idx >= 3:
                 break
             series_entry = search_entry["show"]
             id_tvmaze = str(series_entry["id"])
+            series_entry = tvmaze_show(id_tvmaze, cache=self.cache)
             episode_data = tvmaze_show_episodes_list(id_tvmaze)
             for episode_entry in episode_data:
                 id_tvdb = self._opt_str(series_entry["externals"].get("thetvdb"))
@@ -604,11 +612,8 @@ class TvMaze(Provider[MetadataEpisode]):
                     if country.get("code") in target_countries:
                         return aka["name"]
 
-                if language.a2 == "en":
-                    show_language = (series_entry.get("language") or "").lower()
-                    if show_language not in ("english", "en", ""):
-                        for aka in akas:
-                            if aka.get("country") is None:
-                                return aka["name"]
+                # country: null fallback removed — TVMaze defines these as
+                # original-country aliases, not English/international titles.
+                # See: https://github.com/jkwill87/mnamer/pull/375
 
         return series_entry["name"]

@@ -177,8 +177,8 @@ def test_search__no_hits(provider: TvMaze):
         next(provider.search(query))
 
 
-def test_search__foreign_show_english_aka_with_language():
-    """Foreign show returns English AKA name when language=en."""
+def test_search__foreign_show_returns_primary_name_when_no_english_aka():
+    """Show with only a country=null AKA returns primary name for --language=en."""
     provider = TvMaze(cache=False)
     query = MetadataEpisode(
         id_tvmaze="59772",
@@ -188,7 +188,7 @@ def test_search__foreign_show_english_aka_with_language():
     )
     results = list(provider.search(query))
     assert results
-    assert results[0].series == "Faster Than Fear"
+    assert results[0].series == "Schneller Als Die Angst"
 
 
 def test_search__foreign_show_primary_name_without_language():
@@ -204,8 +204,6 @@ def test_search__foreign_show_primary_name_without_language():
     assert results[0].series == "Schneller Als Die Angst"
 
 
-# English AKA with country: null fallback (Faster than Fear) — already have this
-# Polish show with no country-coded AKAs — verify primary name returned unchanged
 def test_search__show_with_ambiguous_akas_returns_primary():
     """Show with only country=null AKAs returns primary name even with language=en."""
     provider = TvMaze(cache=False)
