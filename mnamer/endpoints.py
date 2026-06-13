@@ -112,10 +112,21 @@ class TvMazeExternals(TypedDict):
     imdb: NotRequired[str | None]
 
 
+class TvMazeAka(TypedDict):
+    name: str
+    country: dict[str, str] | None
+
+
+class TvMazeEmbedded(TypedDict, total=False):
+    akas: list[TvMazeAka]
+
+
 class TvMazeShow(TypedDict):
     id: int
     name: str
     externals: TvMazeExternals
+    language: NotRequired[str | None]
+    _embedded: NotRequired[TvMazeEmbedded]
 
 
 class TvMazeSearchEntry(TypedDict):
