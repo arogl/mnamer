@@ -364,7 +364,6 @@ class Tvdb(Provider[MetadataEpisode]):
         series_data = tvdb_search_series(
             self.token, series, language=language, cache=self.cache
         )
-
         for series_id in [str(entry["id"]) for entry in series_data["data"][:5]]:
             try:
                 for data in self._search_id(series_id, season, episode, language):
@@ -456,9 +455,15 @@ class TvMaze(Provider[MetadataEpisode]):
         series_data = tvmaze_show(id_tvmaze, cache=self.cache)
         episode_data = tvmaze_episode_by_number(id_tvmaze, season, episode)
         id_tvdb = self._opt_str(series_data["externals"].get("thetvdb"))
-        yield self._transform_meta(
-            id_tvmaze, id_tvdb, series_data, episode_data, language
-        )
+        for name in self._candidate_names(series_data, language):
+            yield self._transform_meta(
+                id_tvmaze,
+                id_tvdb,
+                series_data,
+                episode_data,
+                language,
+                name_override=name,
+            )
 
     def _lookup_with_id_and_date(
         self,
@@ -481,9 +486,15 @@ class TvMaze(Provider[MetadataEpisode]):
             )  # re-fetch with AKAs embedded
         episode_data = tvmaze_episodes_by_date(query_id_tvmaze, air_date)
         for episode_entry in episode_data:
-            yield self._transform_meta(
-                query_id_tvmaze, query_id_tvdb, series_data, episode_entry, language
-            )
+            for name in self._candidate_names(series_data, language):
+                yield self._transform_meta(
+                    query_id_tvmaze,
+                    query_id_tvdb,
+                    series_data,
+                    episode_entry,
+                    language,
+                    name_override=name,
+                )
 
     def _lookup_with_id(
         self,
@@ -507,6 +518,7 @@ class TvMaze(Provider[MetadataEpisode]):
             )  # re-fetch with AKAs embedded
         episode_data = tvmaze_show_episodes_list(query_id_tvmaze)
         for episode_entry in episode_data:
+            # Filter using primary name first, then yield all candidates
             meta = self._transform_meta(
                 query_id_tvmaze, query_id_tvdb, series_data, episode_entry, language
             )
@@ -514,7 +526,15 @@ class TvMaze(Provider[MetadataEpisode]):
                 continue
             if episode is not None and episode != meta.episode:
                 continue
-            yield meta
+            for name in self._candidate_names(series_data, language):
+                yield self._transform_meta(
+                    query_id_tvmaze,
+                    query_id_tvdb,
+                    series_data,
+                    episode_entry,
+                    language,
+                    name_override=name,
+                )
 
     def _search_with_season_and_episode(
         self,
@@ -535,6 +555,7 @@ class TvMaze(Provider[MetadataEpisode]):
                 episode_entry = tvmaze_episode_by_number(id_tvmaze, season, episode)
             except MnamerNotFoundException:
                 continue
+            # Filter using primary name first, then yield all candidates
             meta = self._transform_meta(
                 id_tvmaze, None, series_entry, episode_entry, language
             )
@@ -542,7 +563,15 @@ class TvMaze(Provider[MetadataEpisode]):
                 continue
             if episode is not None and episode != meta.episode:
                 continue
-            yield meta
+            for name in self._candidate_names(series_entry, language):
+                yield self._transform_meta(
+                    id_tvmaze,
+                    None,
+                    series_entry,
+                    episode_entry,
+                    language,
+                    name_override=name,
+                )
 
     def _search(
         self,
@@ -562,6 +591,7 @@ class TvMaze(Provider[MetadataEpisode]):
             episode_data = tvmaze_show_episodes_list(id_tvmaze)
             for episode_entry in episode_data:
                 id_tvdb = self._opt_str(series_entry["externals"].get("thetvdb"))
+                # Filter using primary name first, then yield all candidates
                 meta = self._transform_meta(
                     id_tvmaze, id_tvdb, series_entry, episode_entry, language
                 )
@@ -569,7 +599,15 @@ class TvMaze(Provider[MetadataEpisode]):
                     continue
                 if episode is not None and episode != meta.episode:
                     continue
-                yield meta
+                for name in self._candidate_names(series_entry, language):
+                    yield self._transform_meta(
+                        id_tvmaze,
+                        id_tvdb,
+                        series_entry,
+                        episode_entry,
+                        language,
+                        name_override=name,
+                    )
 
     @staticmethod
     def _transform_meta(
@@ -578,6 +616,7 @@ class TvMaze(Provider[MetadataEpisode]):
         series_entry: TvMazeShow,
         episode_entry: TvMazeEpisode,
         language: Language | None = None,
+        name_override: str | None = None,
     ) -> MetadataEpisode:
         airdate = episode_entry["airdate"]
         return MetadataEpisode(
@@ -586,13 +625,15 @@ class TvMaze(Provider[MetadataEpisode]):
             id_tvdb=id_tvdb or None,
             id_tvmaze=id_tvmaze or None,
             season=episode_entry["season"],
-            series=TvMaze._preferred_name(series_entry, language),
+            series=name_override or TvMaze._preferred_name(series_entry, language),
             synopsis=episode_entry["summary"] or None,
             title=episode_entry["name"] or None,
         )
 
     @staticmethod
     def _preferred_name(series_entry: TvMazeShow, language: Language | None) -> str:
+        """Returns the single best name for a series given the requested language.
+        Used for season/episode filtering before candidate selection."""
         if language:
             if language.a2 not in _LANGUAGE_COUNTRIES:
                 warn(
@@ -606,7 +647,6 @@ class TvMaze(Provider[MetadataEpisode]):
             else:
                 akas = series_entry.get("_embedded", {}).get("akas", []) or []
                 target_countries = _LANGUAGE_COUNTRIES[language.a2]
-
                 for aka in akas:
                     country = aka.get("country") or {}
                     if country.get("code") in target_countries:
@@ -617,3 +657,31 @@ class TvMaze(Provider[MetadataEpisode]):
                 # See: https://github.com/jkwill87/mnamer/pull/375
 
         return series_entry["name"]
+
+    @staticmethod
+    def _candidate_names(
+        series_entry: TvMazeShow, language: Language | None
+    ) -> list[str]:
+        """Returns all candidate series names for user selection.
+
+        When a language is requested and an exact country-coded AKA match is
+        found, returns only that match (unambiguous). When no exact match exists
+        but country=null AKAs are present, returns the primary name followed by
+        each null-country AKA so the user can choose the correct title.
+        """
+        if language and language.a2 in _LANGUAGE_COUNTRIES:
+            akas = series_entry.get("_embedded", {}).get("akas", []) or []
+            target_countries = _LANGUAGE_COUNTRIES[language.a2]
+
+            # Exact match — single unambiguous result
+            for aka in akas:
+                country = aka.get("country") or {}
+                if country.get("code") in target_countries:
+                    return [aka["name"]]
+
+            # No exact match — surface country=null AKAs alongside primary
+            null_akas = [aka["name"] for aka in akas if aka.get("country") is None]
+            if null_akas:
+                return [series_entry["name"]] + null_akas
+
+        return [series_entry["name"]]
