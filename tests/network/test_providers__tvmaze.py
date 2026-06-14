@@ -1,5 +1,9 @@
+
+from typing import cast
+
 import pytest
 
+from mnamer.endpoints import TvMazeShow
 from mnamer.exceptions import MnamerNotFoundException
 from mnamer.language import Language
 from mnamer.metadata import MetadataEpisode
@@ -260,18 +264,17 @@ def test_search__show_with_no_akas_returns_primary_name():
 
 
 def test_search__unsupported_language_warns_and_returns_primary():
-    """Requesting a language with no _LANGUAGE_COUNTRIES mapping warns and returns primary name."""
-    provider = TvMaze(cache=False)
-    query = MetadataEpisode(
-        id_tvmaze="50",  # The Lottery — simple English show, no AKAs
-        season=1,
-        episode=1,
-        language=Language.parse("ar"),  # Arabic — not in _LANGUAGE_COUNTRIES
+    """_preferred_name warns when language has no country mapping."""
+    series = cast(
+        TvMazeShow,
+        {
+            "name": "The Lottery",
+            "_embedded": {"akas": []},
+        },
     )
     with pytest.warns(UserWarning, match="No TVMaze country mapping for language 'ar'"):
-        results = list(provider.search(query))
-    assert results
-    assert results[0].series == "The Lottery"
+        result = TvMaze._preferred_name(series, language=Language.parse("ar"))
+    assert result == "The Lottery"
 
 
 def test_search__no_matching_language_aka_returns_primary():
@@ -300,3 +303,130 @@ def test_search__multiple_akas_same_country_returns_first():
     results = list(provider.search(query))
     assert results
     assert results[0].series == "В Поле Зрения"  # first RU AKA wins
+
+
+# ---------------------------------------------------------------------------
+# TvMaze._candidate_names — unit tests (no network)
+# ---------------------------------------------------------------------------
+
+
+class TestCandidateNames:
+    """Tests for TvMaze._candidate_names static method."""
+
+    def _make_series(self, series_name: str, akas: list[dict]) -> TvMazeShow:
+        return cast(
+            TvMazeShow,
+            {
+                "name": series_name,
+                "_embedded": {"akas": akas},
+            },
+        )
+
+    def test_no_language_returns_primary_only(self):
+        series = self._make_series(
+            "Schneller Als Die Angst",
+            [
+                {"name": "Faster Than Fear", "country": None},
+            ],
+        )
+        result = TvMaze._candidate_names(series, language=None)
+        assert result == ["Schneller Als Die Angst"]
+
+    def test_exact_country_match_returns_single_result(self):
+        """Exact country-coded match — no ambiguity, no extra choices."""
+        series = self._make_series(
+            "Morfeusz",
+            [
+                {"name": "Morpheus", "country": {"code": "GB"}},
+                {"name": "Morphée", "country": {"code": "FR"}},
+            ],
+        )
+        result = TvMaze._candidate_names(series, language=Language.parse("en"))
+        assert result == ["Morpheus"]
+
+    def test_no_match_with_null_akas_returns_primary_plus_nulls(self):
+        """No country-coded match but country=null AKAs exist — offer choice."""
+        series = self._make_series(
+            "Schneller Als Die Angst",
+            [
+                {"name": "Faster Than Fear", "country": None},
+                {"name": "Peur Bleue", "country": None},
+            ],
+        )
+        result = TvMaze._candidate_names(series, language=Language.parse("en"))
+        assert result == [
+            "Schneller Als Die Angst",
+            "Faster Than Fear",
+            "Peur Bleue",
+        ]
+
+    def test_no_match_no_null_akas_returns_primary_only(self):
+        """No country-coded match, no null AKAs — silently return primary."""
+        series = self._make_series(
+            "어게인 마이 라이프",
+            [
+                {"name": "다시 내 인생", "country": {"code": "KR"}},
+            ],
+        )
+        result = TvMaze._candidate_names(series, language=Language.parse("en"))
+        assert result == ["어게인 마이 라이프"]
+
+    def test_empty_akas_returns_primary_only(self):
+        series = self._make_series("Some Show", [])
+        result = TvMaze._candidate_names(series, language=Language.parse("en"))
+        assert result == ["Some Show"]
+
+    def test_missing_embedded_returns_primary_only(self):
+        series = cast(TvMazeShow, {"name": "Some Show"})
+        result = TvMaze._candidate_names(series, language=Language.parse("en"))
+        assert result == ["Some Show"]
+
+    def test_unsupported_language_returns_primary_only(self):
+        """Language not in _LANGUAGE_COUNTRIES — falls through to primary."""
+        series = self._make_series(
+            "какое-то шоу",
+            [
+                {"name": "Some Show", "country": None},
+            ],
+        )
+        # "ar" is a valid ISO code but not mapped in _LANGUAGE_COUNTRIES
+        result = TvMaze._candidate_names(series, language=Language.parse("ar"))
+        assert result == ["какое-то шоу"]
+
+    def test_null_aka_not_returned_when_exact_match_exists(self):
+        """If exact country match found, null AKAs must not be included."""
+        series = self._make_series(
+            "Schneller Als Die Angst",
+            [
+                {"name": "Faster Than Fear", "country": None},
+                {"name": "Fear", "country": {"code": "US"}},
+            ],
+        )
+        result = TvMaze._candidate_names(series, language=Language.parse("en"))
+        assert result == ["Fear"]
+        assert "Faster Than Fear" not in result
+        assert "Schneller Als Die Angst" not in result
+
+
+# ---------------------------------------------------------------------------
+# Integration test — network
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.network
+@pytest.mark.tvmaze
+@pytest.mark.flaky(reruns=1)
+def test_search__null_aka_show_yields_multiple_series_name_candidates():
+    """Schneller Als Die Angst (id=59772) has country=null AKA 'Faster Than Fear'.
+    With --language=en, both names should appear as separate results."""
+    provider = TvMaze(cache=False)
+    query = MetadataEpisode(
+        id_tvmaze="59772",
+        season=1,
+        episode=1,
+        language=Language.parse("en"),
+    )
+    results = list(provider.search(query))
+    series_names = [r.series for r in results]
+    assert "Schneller Als Die Angst" in series_names
+    assert "Faster Than Fear" in series_names
