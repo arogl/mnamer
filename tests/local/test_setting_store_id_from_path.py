@@ -86,7 +86,11 @@ def test_id_from_path_default_false():
 
 def test_id_from_path_flag_accepted():
     """--id-from-path must not raise 'invalid arguments'."""
-    sys.argv += ["--id-from-path", "--test", r"G:\Media\Show {tmdb-1}\Season 01"]
+    sys.argv += [
+        "--id-from-path",
+        "--test",
+        r"G:\Media\Show {tmdb-1}\Season 01",
+    ]
     settings = SettingStore()
     settings.load()  # would raise MnamerException if flag unknown
     assert settings.id_from_path is True
@@ -137,13 +141,20 @@ def test_id_tmdb_cross_references_to_tvdb(tmp_path):
 
     fake_external = {"id_tvdb": "433591", "id_imdb": "tt27489517"}
 
-    sys.argv += ["--id-from-path", "--test", str(tmp_path / "Show {tmdb-228498}")]
+    sys.argv += [
+        "--id-from-path",
+        "--test",
+        str(tmp_path / "Show {tmdb-228498}"),
+    ]
     settings = SettingStore()
     settings.api_key_tmdb = "fake_key"
 
     with (
-        patch("mnamer.setting_store.tmdb_to_external_ids", return_value=fake_external),
-        patch("mnamer.target.tmdb_to_external_ids", return_value=fake_external),
+        patch(
+            "mnamer.setting_store.tmdb_to_external_ids",
+            return_value=fake_external,
+        ),
+        patch("mnamer.utils.tmdb_to_external_ids", return_value=fake_external),
     ):
         settings.load()
 
